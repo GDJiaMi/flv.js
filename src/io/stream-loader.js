@@ -51,23 +51,29 @@ class StreamLoader extends BaseLoader {
 
     open(dataSource) {
         try {
-            const {PassThrough} = require('stream');
-            const stream = this._stream = new PassThrough();
-            const mediaServer = this._config.mediaServer;
+            const stream = this._stream = {
+                write: (chunk, ...args) => {
+                    this._onStreamMessage(chunk);
+                },
+                cork: () => {},
+                uncork: () => {},
+                on: () => {},
+                end: () => {
+                    this._onStreamClose();
+                }
+            };
 
+            const mediaServer = this._config.mediaServer;
+ 
             if (mediaServer == null) {
                 throw new Error('mediaServer 不能为空');
             }
 
-            stream.on('readable', this._onStreamReadable.bind(this));
-            stream.on('end', this._onStreamClose.bind(this));
-            stream.on('close', this._onStreamClose.bind(this));
-            stream.on('data', this._onStreamMessage.bind(this));
-            stream.on('error', this._onStreamError.bind(this));
-
             mediaServer.connect(dataSource.url, stream);
 
             this._status = LoaderStatus.kConnecting;
+
+            this._onStreamReadable();
         } catch (e) {
             this._status = LoaderStatus.kError;
 
@@ -110,18 +116,7 @@ class StreamLoader extends BaseLoader {
     }
 
     _onStreamMessage(chunk) {
-        if (Buffer.isBuffer(chunk)) {
-            this._dispatchArrayBuffer(chunk.buffer);
-        } else {
-            this._status = LoaderStatus.kError;
-            let info = {code: -1, msg: 'Unsupported Stream message type'};
-
-            if (this._onError) {
-                this._onError(LoaderErrors.EXCEPTION, info);
-            } else {
-                throw new RuntimeException(info.msg);
-            }
-        }
+        this._dispatchArrayBuffer(Buffer.from(chunk).buffer);
     }
 
     _dispatchArrayBuffer(arraybuffer) {
